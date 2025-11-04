@@ -14,7 +14,7 @@
 #' @importFrom future plan multisession
 #' @importFrom future.apply future_lapply
 #' @importFrom dplyr filter
-#' @importFrom flowCore read.FCS
+#' @importFrom flowCore read.FCS exprs
 #'
 #' @param control.dir File path to the single-stained control FCS files.
 #' @param control.def.file CSV file defining the single-color control file names,
@@ -89,9 +89,11 @@ define.flow.control <- function( control.dir, control.def.file, asp,
 
   flow.set.channel <- colnames(
     suppressWarnings(
-      flowCore::read.FCS( file.path( control.dir, control.table$filename[ 1 ] ),
-                          truncate_max_range = FALSE,
-                          emptyValue = FALSE )
+      flowCore::exprs(
+        flowCore::read.FCS( file.path( control.dir, control.table$filename[ 1 ] ),
+                            truncate_max_range = FALSE,
+                            emptyValue = FALSE )
+      )
     )
   )
 

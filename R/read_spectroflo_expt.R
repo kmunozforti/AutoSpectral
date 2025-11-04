@@ -1,6 +1,6 @@
 # read_spectroflo_expt.r
 
-#' @title read.spectroflo.expt
+#' @title Extract Spectra From SpectroFlo Expt File
 #'
 #' @description
 #' Reads an Experiment (.Expt) file from SpectroFlo and extracts the spillover

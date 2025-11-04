@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_bd_spectra.R
 \name{read.bd.spectra}
 \alias{read.bd.spectra}
-\title{Read BD FCS Spectra}
+\title{Extract Spectra From BD FCS File}
 \usage{
 read.bd.spectra(fcs.file)
 }

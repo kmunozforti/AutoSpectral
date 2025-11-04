@@ -1,6 +1,6 @@
 # cosine_similarity.r
 
-#' @title Calculate cosine similarity
+#' @title Calculate Cosine Similarity
 #' @description
 #' Calculates the cosine similarity between columns of the input matrix (spectra).
 #'

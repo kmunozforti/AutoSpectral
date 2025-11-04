@@ -1,6 +1,6 @@
 # read_spectra.r
 
-#' @title Read Spectra
+#' @title Read In Saved Spectra
 #'
 #' @description
 #' Reads in CSV files created by `AutoSpectral` or in the same format

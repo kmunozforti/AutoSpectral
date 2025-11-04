@@ -199,3 +199,9 @@ asp$max.worker.process.n
 For unmixing larger data sets, you will do well to use a machine with
 more CPUs. Suggestions for faster processing are welcome. Some modest
 improvements are in the works.
+
+## Updates and bug fixes
+
+- Version 0.8.1: More fluorophores, rearranging detectors if needed
+- Version 0.8.2: Support for Mosaic and Xenith cytometers
+- Version 0.8.3: Patch for error introduced in 0.8.2

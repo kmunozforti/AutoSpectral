@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_spectroflo_expt.R
 \name{read.spectroflo.expt}
 \alias{read.spectroflo.expt}
-\title{read.spectroflo.expt}
+\title{Extract Spectra From SpectroFlo Expt File}
 \usage{
 read.spectroflo.expt(
   expt.file,

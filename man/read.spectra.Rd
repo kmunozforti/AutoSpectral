@@ -2,7 +2,7 @@
 % Please edit documentation in R/read_spectra.R
 \name{read.spectra}
 \alias{read.spectra}
-\title{Read Spectra}
+\title{Read In Saved Spectra}
 \usage{
 read.spectra(
   spectra.file,

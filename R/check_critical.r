@@ -1,6 +1,6 @@
 # check_critical.r
 
-#' @title check.critical
+#' @title Perform Critical Check
 #'
 #' @description Checks condition, if not true prints error message and
 #' stops execution.

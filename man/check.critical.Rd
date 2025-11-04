@@ -2,7 +2,7 @@
 % Please edit documentation in R/check_critical.r
 \name{check.critical}
 \alias{check.critical}
-\title{check.critical}
+\title{Perform Critical Check}
 \usage{
 check.critical(condition, error.msg)
 }

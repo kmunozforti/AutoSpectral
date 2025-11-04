@@ -2,7 +2,7 @@
 % Please edit documentation in R/cosine_similarity.R
 \name{cosine.similarity}
 \alias{cosine.similarity}
-\title{Calculate cosine similarity}
+\title{Calculate Cosine Similarity}
 \usage{
 cosine.similarity(spectra)
 }

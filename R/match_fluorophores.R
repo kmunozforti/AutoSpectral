@@ -40,7 +40,7 @@ match.fluorophores <- function( control.filenames, fluorophore.database ) {
 
         pattern <- paste0( delim.start, fluor.escaped, delim.end )
 
-        if ( grepl( pattern, filename, perl = TRUE ) ) {
+        if ( grepl( pattern, filename, ignore.case = TRUE, perl = TRUE ) ) {
           fluorophore <- fluorophore.database$fluorophore[ i ]
           message( paste( "\033[32mMatch:", fluor, "to", fluorophore, "in", filename, "\033[0m" ) )
           break
