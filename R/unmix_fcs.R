@@ -5,10 +5,9 @@
 #' @description
 #' This function performs spectral unmixing on FCS data using various methods.
 #'
-#' @importFrom flowCore read.FCS keyword exprs flowFrame parameters pData
+#' @importFrom flowCore read.FCS keyword exprs flowFrame parameters
 #' @importFrom flowCore write.FCS parameters<-
-#' @importFrom Biobase AnnotatedDataFrame
-#' @importFrom utils packageVersion
+#' @importFrom utils packageVersion modifyList
 #'
 #' @param fcs.file A character string specifying the path to the FCS file.
 #' @param spectra A matrix containing the spectral data.
@@ -92,7 +91,7 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
                        divergence.threshold = 1e4,
                        divergence.handling = "Balance",
                        balance.weight = 0.5,
-                       speed = "fast" ){
+                       speed = "fast" ) {
 
   if ( is.null( output.dir ) )
     output.dir <- asp$unmixed.fcs.dir
@@ -113,7 +112,7 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
   # import fcs, without warnings for fcs 3.2
   fcs.data <- suppressWarnings(
     flowCore::read.FCS( fcs.file, transformation = FALSE,
-              truncate_max_range = FALSE, emptyValue = FALSE )
+                        truncate_max_range = FALSE, emptyValue = FALSE )
   )
 
   fcs.keywords <- flowCore::keyword( fcs.data )
@@ -121,14 +120,13 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
   RMSE <- NULL
 
   # deal with manufacturer peculiarities in writing fcs files
-  if ( asp$cytometer == "ID7000" ) {
-    file.name <- sub( "Raw", method, file.name )
-
-  } else if ( asp$cytometer == "FACSDiscover S8" | asp$cytometer == "FACSDiscover A8" ) {
+  if ( asp$cytometer %in% c( "ID7000", "Mosaic" ) ) {
+    file.name <- sub( "([ _])Raw(\\.fcs$|\\s|$)", paste0("\\1", method, "\\2"),
+                      file.name, ignore.case = TRUE )
+  } else if ( grepl( "Discover", asp$cytometer ) ) {
     file.name <- fcs.keywords$FILENAME
     file.name <- sub( ".*\\/", "", file.name )
     file.name <- sub( ".fcs", paste0( " ", method, ".fcs" ), file.name )
-
   } else {
     file.name <- sub( ".fcs", paste0( " ", method, ".fcs" ), file.name )
   }
@@ -139,29 +137,34 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
   # extract exprs
   fcs.exprs <- flowCore::exprs( fcs.data )
   rm( fcs.data )
+  original.param <- colnames( fcs.exprs )
 
   spectral.channel <- colnames( spectra )
   spectral.exprs <- fcs.exprs[ , spectral.channel, drop = FALSE ]
 
   other.channels <- setdiff( colnames( fcs.exprs ), spectral.channel )
+  # remove height and width if present
+  suffixes <- c( "-H", "-W" )
+  for ( ch in spectral.channel[ grepl( "-A$", spectral.channel ) ] ) {
+    base <- sub( "-A$", "", ch )
+    other.channels <- setdiff( other.channels, paste0( base, suffixes ) )
+  }
   other.exprs <- fcs.exprs[ , other.channels, drop = FALSE ]
 
   if ( !include.raw )
     rm( fcs.exprs )
 
   # remove imaging parameters if desired
-  if ( asp$cytometer == "FACSDiscover S8" | asp$cytometer == "FACSDiscover A8" &
-       !include.imaging ) {
+  if ( grepl( "Discover", asp$cytometer ) & !include.imaging )
     other.exprs <- other.exprs[ , asp$time.and.scatter ]
-  }
 
   # define weights if needed
   # if A8 or S8, pull detector reliability info from FCS file
-  # else, use empirical Poisson variance
+  # otherwise, use empirical Poisson variance
   if ( weighted | method == "WLS"| method == "Poisson"| method == "FastPoisson" ) {
     if ( is.null( weights ) ) {
 
-      if ( asp$cytometer == "FACSDiscover S8" | asp$cytometer == "FACSDiscover A8" ) {
+      if ( grepl( "Discover", asp$cytometer ) ) {
         qspe <- fcs.keywords[[ "BDSPECTRAL QSPE" ]]
         qspe.values <- strsplit( qspe, ",")[[ 1 ]]
         n.channels <- as.numeric( qspe.values[ 1 ] )
@@ -185,7 +188,7 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
     }
   }
 
-  # apply unmixing using selected method
+  # apply unmixing using selected method ---------------
   unmixed.data <- switch( method,
                          "OLS" = unmix.ols( spectral.exprs, spectra ),
                          "WLS" = unmix.wls( spectral.exprs, spectra, weights ),
@@ -270,11 +273,10 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
     unmixed.data <- unmixed.data$unmixed.data
   }
 
+  # add back raw exprs and others columns as desired
   if ( include.raw ) {
-    # add back raw exprs and others
     unmixed.data <- cbind( fcs.exprs, unmixed.data )
   } else {
-    # add back other columns
     unmixed.data <- cbind( other.exprs, unmixed.data )
   }
 
@@ -284,45 +286,93 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
   if ( anyNA( unmixed.data ) )
     unmixed.data[ is.na( unmixed.data ) ] <- 0
 
-  # define new FCS file
-  flow.frame <- suppressWarnings( flowCore::flowFrame( unmixed.data ) )
+  # update keywords----------
+  # identify non-parameter keywords
+  non.param.keys <- fcs.keywords[ !grepl( "^\\$?P\\d+", names( fcs.keywords ) ) ]
+  if ( asp$cytometer == "Mosaic" )
+    non.param.keys <- non.param.keys[ !grepl( "^\\$?CH\\d+", names( non.param.keys ) ) ]
 
-  # set max range values
-  params <- pData( parameters( flow.frame ) )
-  params$maxRange[ !( params$name %in% c( "Time", "TIME" ) ) ] <- asp$expr.data.max
+  # build lookup
+  pN.keys <- grep( "^\\$?P\\d+N$", names( fcs.keywords ), value = TRUE )
+  param.lookup <- lapply( pN.keys, function( k ) {
+    p.idx <- sub( "\\$?P(\\d+)N", "\\1", k )
+    matches <- grep( paste0( "^\\$?P", p.idx, "(?:[A-Z]+)$" ), names( fcs.keywords ),
+                     value = TRUE )
+    setNames( fcs.keywords[ matches], matches )
+  } )
+  # name the list by parameter name
+  names( param.lookup ) <- sapply( pN.keys, function( k ) fcs.keywords[[ k ]])
 
-  # add antigen labels based on match between param name and fluorophore
-  fluor.match.idx <- match( params$name, flow.control$fluorophore )
+  # keywords for new parameters
+  param.keywords <- list()
+  n.param <- ncol( unmixed.data )
 
-  params$desc[ !is.na( fluor.match.idx ) ] <-
-    flow.control$antigen[ fluor.match.idx[ !is.na( fluor.match.idx ) ] ]
+  for ( i in seq_len( n.param ) ) {
+    p.name <- colnames( unmixed.data )[ i ]
 
-  other.match.idx <- match( params$name, other.channels )
+    if ( p.name %in% original.param ) {
+      # retain keywords from original file if present
+      old.entry <- param.lookup[[ p.name ]]
+      if ( !is.null( old.entry ) ) {
+        # update index to current parameter number
+        names( old.entry ) <- sub( "^\\$P\\d+", paste0( "$P", i ), names( old.entry ) )
+        param.keywords <- c( param.keywords, old.entry )
 
-  params$desc[ !is.na( other.match.idx ) ] <- NA
+      } else {
+        # fallback if missing
+        param.keywords[[ paste0( "$P", i, "N" )]] <- p.name
+        param.keywords[[ paste0( "$P", i, "S" )]] <- p.name
+      }
 
-  parameters( flow.frame ) <- Biobase::AnnotatedDataFrame( params )
+    } else {
+      # keywords for new unmixed parameters
+      bit.depth <- if ( !is.null( asp$bit.depth ) ) asp$bit.depth else "32"
 
-  # update keywords
-  keyword( flow.frame ) <- fcs.keywords
-  keyword( flow.frame )[[ "$FIL" ]] <- file.name
-  keyword( flow.frame )[[ "$UNMIXINGMETHOD" ]] <- method
-  keyword( flow.frame )[[ "$AUTOSPECTRAL" ]] <- as.character( packageVersion( "AutoSpectral" ) )
+      param.keywords[[ paste0( "$P", i, "N" ) ]] <- p.name
+      param.keywords[[ paste0( "$P", i, "B" ) ]] <- as.character( bit.depth )
+      param.keywords[[ paste0( "$P", i, "E" ) ]] <- "0,0"
+      param.keywords[[ paste0( "$P", i, "R" ) ]] <- as.character( asp$expr.data.max )
+      param.keywords[[ paste0( "$P", i, "DISPLAY" ) ]] <- "LOG"
+      param.keywords[[ paste0( "$P", i, "TYPE" ) ]] <- "Fluorescence"
 
-  # add RMSE as a keyword
-  if ( calculate.error & !is.null( RMSE ) )
-    keyword( flow.frame )[[ "$RMSE" ]] <- RMSE
+      # exception for AF.Index
+      if ( p.name == "AF.Index" ) {
+        param.keywords[[ paste0( "$P", i, "DISPLAY" ) ]] <- "LIN"
+        param.keywords[[ paste0( "$P", i, "TYPE" ) ]] <- "AF_Index"
+      }
 
-  # add weighting values as a keyword
-  if ( !is.null( weights ) ) {
-        weights <- paste( c( length( spectral.channel ),
-                             spectral.channel,
-            formatC( weights, digits = 8, format = "fg" ) ), collapse = "," )
-
-        keyword( flow.frame )[[ "$WEIGHTS" ]] <- weights
+      # assign $PnS (stain) based on flow.control
+      f.idx <- match( p.name, flow.control$fluorophore )
+      marker <- if ( !is.na( f.idx ) ) flow.control$antigen[ f.idx ] else ""
+      param.keywords[[ paste0( "$P", i, "S" ) ]] <- as.character( marker )
+    }
   }
 
-  # write spectral matrix to FCS file
+  # combine
+  new.keywords <- modifyList(
+    modifyList( non.param.keys, param.keywords ),
+    list(
+      "$FIL" = file.name,
+      "$PAR" = as.character( n.param ),
+      "$UNMIXINGMETHOD" = method,
+      "$AUTOSPECTRAL" = as.character( packageVersion( "AutoSpectral" ) )
+    )
+  )
+
+  # RMSE
+  if ( calculate.error & !is.null( RMSE ) )
+    new.keywords[[ "$RMSE" ]] <- RMSE
+
+  # weighting
+  if ( !is.null( weights ) ) {
+    weights.str <- paste( c( length( spectral.channel ),
+                           spectral.channel,
+                           formatC( weights, digits = 8, format = "fg" ) ), collapse = "," )
+    new.keywords[[ "$WEIGHTS" ]] <- weights.str
+  }
+
+  # spectra
+  # TBD switch to using SPILL slot
   fluor.n <- nrow( spectra )
   detector.n <- ncol( spectra )
   vals <- as.vector( t( spectra ) )
@@ -331,16 +381,35 @@ unmix.fcs <- function( fcs.file, spectra, asp, flow.control,
     c( fluor.n, detector.n, rownames( spectra ), colnames( spectra ), formatted.vals ),
     collapse = ","
   )
+  new.keywords[[ "$SPECTRA" ]] <- spill.string
+  new.keywords[[ "$FLUOROCHROMES" ]] <- paste( rownames( spectra ), collapse = "," )
 
-  keyword( flow.frame )[[ "$SPECTRA" ]] <- spill.string
-  keyword( flow.frame )[[ "$FLUOROCHROMES" ]] <- paste( rownames( spectra ), collapse = "," )
-
-  # write parameter names
-  for ( i in seq_along( colnames( unmixed.data ) ) ) {
-    keyword( flow.frame )[[ paste0( "$P", i, "N" ) ]] <- colnames( unmixed.data )[ i ]
-    keyword( flow.frame )[[ paste0( "$P", i, "S" ) ]] <- colnames( unmixed.data )[ i ]
+  # add AF spectra if used
+  if ( !is.null( af.spectra ) ) {
+    af.n <- nrow( af.spectra )
+    vals <- as.vector( t( af.n ) )
+    formatted.vals <- formatC( vals, digits = 8, format = "fg", flag = "#" )
+    af.string <- paste(
+      c( af.n, detector.n, rownames( af.n ), colnames( af.spectra ), formatted.vals ),
+      collapse = ","
+    )
+    new.keywords[[ "$AUTOFLUORESCENCE" ]] <- af.string
   }
 
+  # define new FCS file
+  flow.frame <- suppressWarnings( flowCore::flowFrame( unmixed.data ) )
+  param.desc <- flowCore::parameters( flow.frame )@data$desc
+  for ( i in seq_len( n.param ) ) {
+    p.name <- colnames( unmixed.data )[ i ]
+    # Get the marker from flow.control
+    f.idx <- match( p.name, flow.control$fluorophore )
+    if ( !is.na( f.idx ) )
+      param.desc[ i ] <- as.character( flow.control$antigen[ f.idx ] )
+  }
+  flowCore::parameters( flow.frame )@data$desc <- param.desc
+  keyword( flow.frame ) <- new.keywords
+
+  # save file ---------
   write.FCS( flow.frame, filename = file.path( output.dir, file.name ) )
 
 }

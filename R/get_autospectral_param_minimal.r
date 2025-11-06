@@ -47,6 +47,8 @@ get.autospectral.param.minimal <- function()
       large.gate.scaling.x = 3,
       large.gate.scaling.y = 6,
 
+      bit.depth = "32",
+
       ### general parameters
       verbose = TRUE,
 
